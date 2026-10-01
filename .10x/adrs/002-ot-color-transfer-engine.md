@@ -1,6 +1,6 @@
 # ADR-002: Silnik transferu koloru — Oklab + MKL + sliced-OT + regularyzowany LUT
 
-**Status:** Accepted · **Data:** 2026-10-01 · **Feature:** mvp · **Author:** 10x-Team (Architect + Staff Engineer)
+**Status:** Accepted — krok „fit siatki” superseded by ADR-004 · **Data:** 2026-10-01 · **Feature:** mvp · **Author:** 10x-Team (Architect + Staff Engineer)
 
 ## Context
 Potrzebujemy mapy kolorów target→ref, która (a) oddaje zmiany zależne od barwy, (b) jest gładka (brak bandingu po zastosowaniu na pełnej rozdzielczości i innym materiale), (c) jest deterministyczna i testowalna, (d) liczy się ≤ 3 s w przeglądarce.

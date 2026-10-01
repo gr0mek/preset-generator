@@ -4,6 +4,13 @@
 **Jednostka:** ½d = pół dnia pracy dewelopera. Każde zadanie ≤ ½d (większe pocięte).
 **Statusy:** ☐ todo · ◐ w toku · ☑ done · ⛔ zablokowane
 
+## Postęp (2026-10-01)
+
+**☑ 18 · ◐ 4 · ☐ 53** — szczegóły w `decisions/sde/mvp.md`.
+- ◐ E0.5/E0.6: workflow CI i nagłówki CSP gotowe, czekają na podpięcie repo GitHub + Cloudflare Pages (brak dostępu z sesji).
+- ◐ E4.12: harness gotowy (`npm run lut`), strojenie parametrów czeka na zbiór QA (E1.6).
+- ◐ E7a.2: roundtrip parsera ☑, golden tests na parach QA czekają na E1.6.
+
 ## Podsumowanie
 
 | Epika | Nazwa | Zadań | Szac. | Milestone |
@@ -41,12 +48,12 @@ Równolegle: E1 (spike'i) od dnia 1; E2/E5/E6 (UI) od tygodnia 2 przez drugą os
 
 | ID | Zadanie | Szac. | Zależy od | Kryteria akceptacji |
 |---|---|---|---|---|
-| E0.1 | Repo GitHub, Vite + React 18 + TS strict, struktura `src/{ui,app,io,engine,preview,scopes,export}` | ½d | — | `npm run dev` działa; tsconfig strict + noUncheckedIndexedAccess |
-| E0.2 | ESLint (typescript-eslint, react-hooks, boundaries) + Prettier + husky/lint-staged | ½d | E0.1 | Reguła boundaries blokuje import DOM/React w `engine/` |
-| E0.3 | Vitest + coverage, katalog `test/fixtures/` | ½d | E0.1 | Przykładowy test przechodzi w CI |
-| E0.4 | Playwright (Chromium + WebKit), smoke test strony | ½d | E0.1 | `npm run e2e` lokalnie i w CI |
-| E0.5 | GitHub Actions: lint, typecheck, unit, build, e2e | ½d | E0.2–E0.4 | PR blokowany przy czerwonym CI |
-| E0.6 | Cloudflare Pages: preview deploy per PR + produkcja z `main`; nagłówki CSP (`_headers`) | ½d | E0.5 | URL preview w PR; CSP `default-src 'self'`, `worker-src 'self' blob:` |
+| ☑ E0.1 | Repo GitHub, Vite + React 18 + TS strict, struktura `src/{ui,app,io,engine,preview,scopes,export}` | ½d | — | `npm run dev` działa; tsconfig strict + noUncheckedIndexedAccess |
+| ☑ E0.2 | ESLint (typescript-eslint, react-hooks, boundaries) + Prettier + husky/lint-staged | ½d | E0.1 | Reguła boundaries blokuje import DOM/React w `engine/` |
+| ☑ E0.3 | Vitest + coverage, katalog `test/fixtures/` | ½d | E0.1 | Przykładowy test przechodzi w CI |
+| ☑ E0.4 | Playwright (Chromium + WebKit), smoke test strony | ½d | E0.1 | `npm run e2e` lokalnie i w CI |
+| ◐ E0.5 | GitHub Actions: lint, typecheck, unit, build, e2e | ½d | E0.2–E0.4 | PR blokowany przy czerwonym CI |
+| ◐ E0.6 | Cloudflare Pages: preview deploy per PR + produkcja z `main`; nagłówki CSP (`_headers`) | ½d | E0.5 | URL preview w PR; CSP `default-src 'self'`, `worker-src 'self' blob:` |
 
 ## E1 — Spike'i ryzyka (M1, start dnia 1)
 
@@ -55,8 +62,8 @@ Równolegle: E1 (spike'i) od dnia 1; E2/E5/E6 (UI) od tygodnia 2 przez drugą os
 | E1.1 | **S1 .xmp (cz. 1):** analiza formatu profilu kreatywnego Camera Raw (`crs:RGBTable`, `crs:Table_<MD5>`), kodowanie wg DNG SDK `dng_big_table` (zlib + ASCII85-like), dopuszczalne rozmiary siatki | ½d | — | Notatka w `decisions/senior-engineer/mvp.md`: struktura XML, algorytm kodowania, rozmiar siatki |
 | E1.2 | **S1 .xmp (cz. 2):** PoC — wygenerować .xmp z LUT identity i z LUT „sepia”, zaimportować w Lightroom Classic + ACR | ½d | E1.1 | Profil widoczny w przeglądarce profili, efekt zgodny z .cube w Photoshopie, Amount działa. **Jeśli fail → decyzja fallback (CTO)** |
 | E1.3 | **S2 .3dl:** ustalić kolejność osi i nagłówek akceptowany przez Resolve, Nuke/Flame (jeśli dostępne), Premiere | ½d | — | Testowy LUT „swap R/B” importuje się i daje oczekiwany wynik |
-| E1.4 | **S3 benchmark (cz. 1):** prototyp MKL + sliced-OT (12 iter.) na 512 px w Workerze, pomiar czasu | ½d | E0.1 | Czas p50 na M1 i średnim laptopie Windows |
-| E1.5 | **S3 benchmark (cz. 2):** prototyp CG dla fitu siatki 33³, pomiar czasu + decyzja TS vs WASM | ½d | E1.4 | Całość ≤ 3 s → TS; inaczej zadanie WASM dopisane do backlogu |
+| ☑ E1.4 | **S3 benchmark (cz. 1):** prototyp MKL + sliced-OT (12 iter.) na 512 px w Workerze, pomiar czasu | ½d | E0.1 | Czas p50 na M1 i średnim laptopie Windows |
+| ☑ E1.5 | **S3 benchmark (cz. 2):** prototyp CG dla fitu siatki 33³, pomiar czasu + decyzja TS vs WASM | ½d | E1.4 | Całość ≤ 3 s → TS; inaczej zadanie WASM dopisane do backlogu |
 | E1.6 | Zebranie zbioru QA: 10 par referencja/target (własne lub licencjonowane), opis oczekiwanego looku | ½d | — | `test/fixtures/qa-pairs/` + `README` z licencjami |
 
 ## E3 — IO: wczytywanie obrazów (M1)
@@ -72,25 +79,25 @@ Równolegle: E1 (spike'i) od dnia 1; E2/E5/E6 (UI) od tygodnia 2 przez drugą os
 
 | ID | Zadanie | Szac. | Zależy od | Kryteria akceptacji |
 |---|---|---|---|---|
-| E4.1 | Typy: `Lut3D`, `EngineOptions`, `EngineResult`, `EngineWarning`, `EngineError`; `identityLut(size)` | ½d | E0.2 | Typy w `engine/types.ts`; test identity |
-| E4.2 | Konwersje: sRGB↔linear, linear↔Oklab (Float32Array, bez alokacji w pętli) | ½d | E4.1 | Roundtrip błąd < 1e-5 na 10⁵ losowych kolorach |
-| E4.3 | Ekstrakcja próbek: Oklab z `ImageData`, maskowanie skrajnych luminancji, alfa | ½d | E4.2 | Test maski na syntetycznym obrazie |
-| E4.4 | Statystyki: średnia, kowariancja 3×3, eigendecomposition 3×3 (Jacobi), sqrtm | ½d | E4.3 | Test na znanych macierzach |
-| E4.5 | MKL: transformacja liniowa target→ref | ½d | E4.4 | Odtwarza znane przekształcenie liniowe (błąd < 1e-3) |
-| E4.6 | Sliced-OT: seeded RNG (`mulberry32`), losowe rotacje, dopasowanie histogramów 1D, relaksacja | ½d | E4.5 | Sliced-Wasserstein do ref maleje monotonicznie (test); deterministyczny przy tym samym seed |
-| E4.7 | Fit siatki (cz. 1): trilinear splat próbek target→wynik na siatkę 33³, prior MKL | ½d | E4.6 | Test: dla danych z mapy liniowej siatka = mapa liniowa |
-| E4.8 | Fit siatki (cz. 2): Laplacian + solver CG, parametr λ | ½d | E4.7 | Brak NaN; gładkość (max 2. różnica) poniżej progu; zbieżność ≤ 200 iter. |
-| E4.9 | Post: Oklab→sRGB węzłów, soft-clip, walidacja monotoniczności luminancji → warnings | ½d | E4.8 | Test na parze ekstremalnej: brak wartości poza [0,1] |
-| E4.10 | Fallback Reinhard dla degeneratywnej referencji + `EngineWarning('LOW_VARIANCE')` | ½d | E4.5 | Ref jednolita szara → fallback + warning |
-| E4.11 | Worker (Comlink): `computeLut` z progress, AbortSignal, timeout 15 s | ½d | E4.9 | Anulowanie w trakcie nie zostawia wiszącego workera |
-| E4.12 | Harness M1: skrypt/strona dev, która przelicza 10 par QA i zapisuje .cube + porównania; strojenie domyślnych λ/iteracji/relaksacji | ½d | E4.11, E7a.1, E1.6 | Pliki do oceny w Resolve; domyślne parametry zapisane w `decisions/sde/mvp.md` |
+| ☑ E4.1 | Typy: `Lut3D`, `EngineOptions`, `EngineResult`, `EngineWarning`, `EngineError`; `identityLut(size)` | ½d | E0.2 | Typy w `engine/types.ts`; test identity |
+| ☑ E4.2 | Konwersje: sRGB↔linear, linear↔Oklab (Float32Array, bez alokacji w pętli) | ½d | E4.1 | Roundtrip błąd < 1e-5 na 10⁵ losowych kolorach |
+| ☑ E4.3 | Ekstrakcja próbek: Oklab z `ImageData`, maskowanie skrajnych luminancji, alfa | ½d | E4.2 | Test maski na syntetycznym obrazie |
+| ☑ E4.4 | Statystyki: średnia, kowariancja 3×3, eigendecomposition 3×3 (Jacobi), sqrtm | ½d | E4.3 | Test na znanych macierzach |
+| ☑ E4.5 | MKL: transformacja liniowa target→ref | ½d | E4.4 | Odtwarza znane przekształcenie liniowe (błąd < 1e-3) |
+| ☑ E4.6 | Sliced-OT: seeded RNG (`mulberry32`), losowe rotacje, dopasowanie histogramów 1D, relaksacja | ½d | E4.5 | Sliced-Wasserstein do ref maleje monotonicznie (test); deterministyczny przy tym samym seed |
+| ☑ E4.7 | Fit siatki (cz. 1): trilinear splat próbek target→wynik na siatkę 33³, prior MKL | ½d | E4.6 | Test: dla danych z mapy liniowej siatka = mapa liniowa |
+| ☑ E4.8 | Fit siatki (cz. 2): Laplacian + solver CG, parametr λ | ½d | E4.7 | Brak NaN; gładkość (max 2. różnica) poniżej progu; zbieżność ≤ 200 iter. |
+| ☑ E4.9 | Post: Oklab→sRGB węzłów, soft-clip, walidacja monotoniczności luminancji → warnings | ½d | E4.8 | Test na parze ekstremalnej: brak wartości poza [0,1] |
+| ☑ E4.10 | Fallback Reinhard dla degeneratywnej referencji + `EngineWarning('LOW_VARIANCE')` | ½d | E4.5 | Ref jednolita szara → fallback + warning |
+| ☑ E4.11 | Worker (Comlink): `computeLut` z progress, AbortSignal, timeout 15 s | ½d | E4.9 | Anulowanie w trakcie nie zostawia wiszącego workera |
+| ◐ E4.12 | Harness M1: skrypt/strona dev, która przelicza 10 par QA i zapisuje .cube + porównania; strojenie domyślnych λ/iteracji/relaksacji | ½d | E4.11, E7a.1, E1.6 | Pliki do oceny w Resolve; domyślne parametry zapisane w `decisions/sde/mvp.md` |
 
 ## E7a — Eksport .cube (M1)
 
 | ID | Zadanie | Szac. | Zależy od | Kryteria akceptacji |
 |---|---|---|---|---|
-| E7a.1 | `applyStrength`, `resampleLut`, `toCube` (TITLE, LUT_3D_SIZE, DOMAIN, R-fastest, 6 miejsc) | ½d | E4.1 | Plik otwiera się w Resolve |
-| E7a.2 | Parser .cube do testów + roundtrip test; golden tests silnika (hash/tolerancja dla par QA) | ½d | E7a.1, E4.12 | Regresja silnika wykrywana w CI |
+| ☑ E7a.1 | `applyStrength`, `resampleLut`, `toCube` (TITLE, LUT_3D_SIZE, DOMAIN, R-fastest, 6 miejsc) | ½d | E4.1 | Plik otwiera się w Resolve |
+| ◐ E7a.2 | Parser .cube do testów + roundtrip test; golden tests silnika (hash/tolerancja dla par QA) | ½d | E7a.1, E4.12 | Regresja silnika wykrywana w CI |
 
 **→ M1 GATE: ocena 10 par QA w Resolve (Gromek + Ola). ≥ 8/10 par ≥ 4/5 = GO.**
 

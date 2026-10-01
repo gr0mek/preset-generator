@@ -1,3 +1,3 @@
-# dba — index
-
-_No decisions yet._
+# DBA — index
+## Features
+- `mvp` — N/A (brak bazy). → [mvp.md](mvp.md)
