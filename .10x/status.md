@@ -10,3 +10,6 @@
 ## Open questions
 - Product form / platform
 - MVP scope
+
+## Decided in brainstorming
+- [2026-10-01] Platform: web app, image processing client-side in browser (no server for analysis).
