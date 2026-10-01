@@ -1,3 +1,3 @@
-# Handoff → Architect
+# Handoff → Engineering Manager
 
-Strategy done: BUILD, time-box ~5 tyg., gate jakości po M1. 8 user stories w decisions/product-manager/mvp.md. Architektura w spec §3–5 — sformalizować w ADR (client-side, silnik OT, LUT jako kanoniczny format).
+Design done: ADR-001 (client-side), ADR-002 (silnik OT), ADR-003 (Lut3D kanoniczny). Kontrakty modułów w decisions/architect/mvp.md, standardy w staff-engineer/mvp.md. Do zaplanowania: spike'i S1 (.xmp), S2 (.3dl order), S3 (benchmark silnika) na początku — wpływają na ryzyko.

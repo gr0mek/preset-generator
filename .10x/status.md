@@ -1,6 +1,6 @@
 # Status — Preset AI
 
-**Phase:** 1 — Strategy Complete
+**Phase:** 2 — Design Complete
 **Feature:** `mvp` · Spec: `.10x/specs/2026-10-01-presetai-mvp-design.md`
 
 ## Decyzje z brainstormingu (2026-10-01)
@@ -13,7 +13,7 @@
 ## Fazy
 - [x] 0 Brainstorming
 - [x] 1 Strategy
-- [ ] 2 Design
+- [x] 2 Design
 - [ ] 3 Planning
 - [ ] 4 Implementation
 - [ ] 5 Verification
