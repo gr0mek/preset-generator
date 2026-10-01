@@ -1,3 +1,9 @@
-# Handoff → Engineering Manager
+# Handoff → SDE
 
-Design done: ADR-001 (client-side), ADR-002 (silnik OT), ADR-003 (Lut3D kanoniczny). Kontrakty modułów w decisions/architect/mvp.md, standardy w staff-engineer/mvp.md. Do zaplanowania: spike'i S1 (.xmp), S2 (.3dl order), S3 (benchmark silnika) na początku — wpływają na ryzyko.
+Fazy 0–3 zamknięte. Start implementacji:
+1. E0.1–E0.6 (setup, CI, deploy) — Dev A
+2. Równolegle spike'i E1.1–E1.3 (.xmp, .3dl), E1.6 (zbiór QA)
+3. Potem E4 (silnik) wg `decisions/senior-engineer/mvp.md`
+
+Czytać: spec `specs/2026-10-01-presetai-mvp-design.md`, ADR-001..003, `backlog.md`.
+Blokery: plik prototypu (E2), decyzje D1–D6.
