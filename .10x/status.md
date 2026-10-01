@@ -1,20 +1,23 @@
 # Status — Preset AI
 
-**Phase:** 0 — Brainstorming (in progress)
-**Started:** 2026-10-01
+**Phase:** 1 — Strategy Complete
+**Feature:** `mvp` · Spec: `.10x/specs/2026-10-01-presetai-mvp-design.md`
 
-## Context
-- A React single-artifact UI prototype exists (landing, editor w/ scopes, export page) — design reference only, analysis is mocked.
-- Pre-development of the real application starts now.
+## Decyzje z brainstormingu (2026-10-01)
+- Platforma: web app, przetwarzanie w przeglądarce.
+- Silnik: para referencja + zdjęcie → Oklab, MKL + sliced-OT → wygładzony LUT 33³, suwak strength.
+- Eksport MVP: .cube, .3dl, .xmp. .drx → v2.
+- Model: darmowe, bez kont. Płatności → v2.
+- Prototyp: port design systemu do Vite+TS, nowa logika.
 
-## Open questions
-- Product form / platform
-- MVP scope
+## Fazy
+- [x] 0 Brainstorming
+- [x] 1 Strategy
+- [ ] 2 Design
+- [ ] 3 Planning
+- [ ] 4 Implementation
+- [ ] 5 Verification
+- [ ] 6 Delivery
 
-## Decided in brainstorming
-- [2026-10-01] Platform: web app, image processing client-side in browser (no server for analysis).
-- [2026-10-01] Engine mode: reference + target photo pair → color transfer (Lab stats + curves) baked to 3D LUT.
-- [2026-10-01] MVP export: .cube, .3dl, .xmp (LR/ACR profile w/ embedded LUT). .drx deferred.
-- [2026-10-01] Business model MVP: free, no accounts, static frontend only. Payments deferred to v2.
-- [2026-10-01] Prototype: port design system/components/widgets into new Vite+TS project; logic rewritten for real engine. User to send prototype file.
-- [2026-10-01] Engine algorithm: Oklab, MKL linear transfer + sliced-OT residual, regularized smooth 33³ LUT fit, strength slider. Neural model deferred to v2.
+## Blokery
+- Plik prototypu (dla epiki E2).
