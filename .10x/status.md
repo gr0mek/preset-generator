@@ -13,3 +13,4 @@
 
 ## Decided in brainstorming
 - [2026-10-01] Platform: web app, image processing client-side in browser (no server for analysis).
+- [2026-10-01] Engine mode: reference + target photo pair → color transfer (Lab stats + curves) baked to 3D LUT.
