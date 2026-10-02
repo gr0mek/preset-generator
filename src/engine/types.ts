@@ -27,6 +27,8 @@ export interface EngineOptions {
    * 'transfer' — move the target's colour distribution onto the reference's (MKL + sliced-OT; ADR-002).
    */
   mode: 'look' | 'transfer'
+  /** Look mode: scales every estimated adjustment — 0 identity, 1 as estimated, 2 exaggerated. */
+  lookStrength: number
   /** LUT grid points per axis. */
   lutSize: number
   /** Sliced-OT iterations (random rotations). */
@@ -87,6 +89,7 @@ export class EngineError extends Error {
 
 export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   mode: 'look',
+  lookStrength: 1,
   lutSize: 33,
   otIterations: 12,
   otRelaxation: 0.8,

@@ -29,6 +29,11 @@ Prawdziwe pary (skany klisz + zdjęcia z telefonu) ujawniły, że transfer rozk�
 neutralny per ton, nasycenie/przesunięcia per barwa tylko dla barw wspólnych. ~0,3 s. Stary tryb:
 `mode: 'transfer'`. Harness: `npm run lut -- --options='{"mode":"transfer"}' ...`.
 
+## Wiele referencji + siła looku (2026-10-02) → ADR-006
+`reference` może być tablicą (klatki jednej rolki): cechy wspólne zostają, rozbieżne są tłumione.
+`lookStrength` 0–2. Harness: `npm run lut -- a.jpg,b.jpg,c.jpg target.jpg out --options='{"lookStrength":1.5}'`.
+Leave-one-out na 5 klatkach: 2,97% (z 6,79%). **Do backlogu:** DropTile na wiele referencji (E2.4/E8.2), suwak siły w Editorze (E8.4).
+
 ## Dług techniczny
 - `GAMUT_CLIPPED` może być nadwrażliwy (wystąpił na syntetycznej parze) — skalibrować na zbiorze QA.
 - Załamanie ~0.05 na krawędzi rozkładu kolorów targetu (ADR-004 „Negative”) — obserwować na realnych LUT-ach.

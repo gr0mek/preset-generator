@@ -1,7 +1,7 @@
 /**
  * E4.12 harness — generate LUTs from real image pairs without the UI (for the M1 quality gate).
  *
- *   npm run lut -- <reference.jpg|png> <target.jpg|png> [out-dir]
+ *   npm run lut -- <reference.jpg|png>[,<reference2>…] <target.jpg|png> [out-dir]
  *   npm run lut -- --batch test/fixtures/qa-pairs [out-dir]
  *       batch mode expects <name>_ref.(jpg|png) + <name>_target.(jpg|png) pairs
  *   --options='{"otIterations":0}'   override EngineOptions (any position; for E4.12 tuning)
@@ -78,14 +78,15 @@ function sideBySide(images: PixelSource[]): PixelSource {
 }
 
 function processPair(name: string, refPath: string, tgtPath: string, outDir: string) {
-  const ref = load(refPath)
+  const refs = refPath.split(',').map(load)
+  const ref = refs[0]!
   const tgt = load(tgtPath)
   const t0 = performance.now()
   const res = computeLut({
-    reference: downscale(ref, ANALYSIS_EDGE),
+    reference: refs.map((r) => downscale(r, ANALYSIS_EDGE)),
     target: downscale(tgt, ANALYSIS_EDGE),
     options,
-    meta: { title: `Preset AI — ${name}`, sourceRef: basename(refPath) },
+    meta: { title: `Preset AI — ${name}`, sourceRef: basename(refPath.split(',')[0]!) },
   })
   const ms = Math.round(performance.now() - t0)
   writeFileSync(join(outDir, `${name}.cube`), cubeText(res.lut))

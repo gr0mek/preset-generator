@@ -1,6 +1,6 @@
 import { linearToSrgb, oklabToLinear, srgbToOklab } from './color'
 import { fitLut } from './fit'
-import { estimateLook, applyLook } from './look'
+import { estimateLook, applyLook, LOOK_STRENGTH_RANGE } from './look'
 import { lutIndex, lutNodeCount } from './lut'
 import { meanCov } from './linalg'
 import { applyAffine, applyAffineAll, computeDiagonal, computeMkl, type AffineMap } from './mkl'
@@ -24,7 +24,8 @@ const MIN_L_STD = 0.02
 const SUPPORT_EPS = 1e-3
 
 export interface ComputeLutArgs {
-  reference: PixelSource
+  /** One reference, or several frames sharing the look (consistent traits are kept, ADR-006). */
+  reference: PixelSource | readonly PixelSource[]
   target: PixelSource
   options?: Partial<EngineOptions>
   meta?: Partial<LutMeta>
@@ -49,9 +50,15 @@ export function computeLut(args: ComputeLutArgs): EngineResult {
 
   // 1. samples
   progress('samples', 0)
-  const ref = extractSamples(args.reference, o.maxSamples)
+  const sources = Array.isArray(args.reference) ? args.reference : [args.reference as PixelSource]
+  if (sources.length === 0) throw new EngineError('EMPTY_IMAGE', 'No reference image')
+  // split the sample budget so several references cost about as much as one
+  const perRef = Math.max(4096, Math.floor(o.maxSamples / sources.length))
+  const refs = sources.map((src) => extractSamples(src, perRef))
+  const ref = poolSamples(refs)
   const tgt = extractSamples(args.target, o.maxSamples)
-  if (ref.count < 16 || tgt.count < 16) throw new EngineError('EMPTY_IMAGE', 'Not enough opaque pixels')
+  if (refs.some((r) => r.count < 16) || tgt.count < 16)
+    throw new EngineError('EMPTY_IMAGE', 'Not enough opaque pixels')
   stage('samples')
 
   const refL = Math.sqrt(meanCov(ref.oklab).cov[0]!)
@@ -64,7 +71,15 @@ export function computeLut(args: ComputeLutArgs): EngineResult {
   const nodes = lutNodeCount(N)
   const { values, support } =
     o.mode === 'look'
-      ? lookNodes(ref.oklab, tgt, N, usedFallback, progress, stage)
+      ? lookNodes(
+          refs.map((r) => r.oklab),
+          tgt,
+          N,
+          usedFallback,
+          o.lookStrength,
+          progress,
+          stage,
+        )
       : transferNodes(ref.oklab, tgt, o, usedFallback, progress, stage)
 
   // 5. clamp, validate
@@ -178,15 +193,16 @@ function transferNodes(
 
 /** ADR-005: content-robust look model evaluated directly at every node (smooth by construction). */
 function lookNodes(
-  refLab: Float32Array,
+  refLabs: readonly Float32Array[],
   tgt: Samples,
   N: number,
   usedFallback: boolean,
+  strength: number,
   progress: ProgressFn,
   stage: StageFn,
 ): NodeValues {
   progress('mkl', 0)
-  const model = estimateLook(refLab, tgt.oklab, { keepTone: usedFallback })
+  const model = estimateLook(refLabs, tgt.oklab, { keepTone: usedFallback, strength })
   stage('mkl')
   stage('ot')
   progress('fit', 0)
@@ -223,6 +239,20 @@ function oklabToSrgbUnclamped(
   for (let c = 0; c < 3; c++) out[o + c] = linearToSrgb(tmpLin[c]!)
 }
 
+function poolSamples(list: readonly Samples[]): Samples {
+  if (list.length === 1) return list[0]!
+  const count = list.reduce((n, s) => n + s.count, 0)
+  const srgb = new Float32Array(count * 3)
+  const oklab = new Float32Array(count * 3)
+  let o = 0
+  for (const s of list) {
+    srgb.set(s.srgb, o)
+    oklab.set(s.oklab, o)
+    o += s.count * 3
+  }
+  return { srgb, oklab, count }
+}
+
 function greyAxisMonotonic(data: Float32Array, N: number): boolean {
   const lab = new Float64Array(3)
   let prev = -Infinity
@@ -246,7 +276,8 @@ function validateOptions(o: EngineOptions) {
     o.smoothness <= 0 ||
     o.fitPasses < 1 ||
     o.priorWeight <= 0 ||
-    o.maxSamples < 64
+    o.maxSamples < 64 ||
+    !(o.lookStrength >= LOOK_STRENGTH_RANGE[0] && o.lookStrength <= LOOK_STRENGTH_RANGE[1])
   if (bad) throw new EngineError('INVALID_OPTIONS')
 }
 

@@ -2,6 +2,10 @@
 // distribution onto the target (which recolours content the reference doesn't contain),
 // estimate the parameters of a grade — tone curve, neutral cast per tone, saturation and
 // per-hue shifts — and only from statistics that both images actually share.
+//
+// With several references (frames of the same roll / grade), each parameter is estimated per
+// reference and kept in proportion to how consistently the references agree on it: what every
+// frame shares is the look, what varies between frames is content (ADR-006).
 
 /** Neutral pixels reveal the colour cast; Oklab chroma tolerance grows with L (dark colours have little chroma). */
 const NEUTRAL_C0 = 0.012
@@ -19,14 +23,19 @@ const HUE_SMOOTH = 1.5
 const HUE_SHIFT_MAX = (15 * Math.PI) / 180
 /** A hue needs this share of chromatic weight in *both* images before it is adjusted. */
 const HUE_SUPPORT = 0.01
-const CONTRAST_RANGE: readonly [number, number] = [0.7, 1.4]
+const CONTRAST_RANGE: readonly [number, number] = [0.8, 1.25]
 const SAT_RANGE: readonly [number, number] = [0.75, 1.3]
 const HUE_SAT_RANGE: readonly [number, number] = [0.6, 1.4]
 const UNSEEN_HUE_SAT = 0.5
 /** Reference median chroma below this ⇒ treated as black & white. */
 const MONO_C = 0.012
-/** Exposure is mostly content — move the target median only part of the way. */
-const EXPOSURE_MATCH = 0.25
+/**
+ * Exposure is mostly content — move the target median only slightly. Even agreement between
+ * references doesn't make it look: frames of one sunny roll agree on "bright" (leave-one-out
+ * error on a darker frame of the same roll rose from 5% to 18% when agreement was trusted).
+ */
+const EXPOSURE_MATCH = 0.1
+export const LOOK_STRENGTH_RANGE: readonly [number, number] = [0, 2]
 
 export interface LookModel {
   /** Output L sampled at L = i/(TONE_TABLE-1). */
@@ -34,74 +43,161 @@ export interface LookModel {
   /** Neutral (a,b) of target / reference per L node — removed, then re-applied. */
   tgtNeutral: Float64Array
   refNeutral: Float64Array
-  /** Overall chroma trend across shared hues (diagnostic; already folded into hueSat). */
-  saturation: number
-  /** Per hue bin: hue shift (rad) and absolute chroma factor, already confidence-weighted. */
+  /** Overall chroma trend across shared hues, log. */
+  logSaturation: number
+  /** Per hue bin: hue shift (rad) and log chroma factor, already confidence-weighted. */
   hueShift: Float64Array
-  hueSat: Float64Array
+  hueLogSat: Float64Array
   monochrome: boolean
+  /** Scales every adjustment: 0 = identity, 1 = as estimated, 2 = exaggerated. */
+  strength: number
 }
 
 export interface LookOptions {
   /** Skip tone matching (degenerate reference). */
   keepTone?: boolean
+  strength?: number
 }
 
-export function estimateLook(ref: Float32Array, tgt: Float32Array, opts: LookOptions = {}): LookModel {
-  const tone = opts.keepTone ? identityTone() : estimateTone(column(ref, 0), column(tgt, 0))
-  const refNeutral = estimateNeutral(ref)
+interface RefEstimate {
+  tone: ToneParams | null
+  neutral: Float64Array
+  monochrome: boolean
+  /** per hue bin */
+  conf: Float64Array
+  shift: Float64Array
+  logRatio: Float64Array
+  support: Float64Array
+}
+
+interface ToneParams {
+  logContrast: number
+  exposure: number
+  black: number
+  white: number
+}
+
+export function estimateLook(
+  refs: readonly Float32Array[],
+  tgt: Float32Array,
+  opts: LookOptions = {},
+): LookModel {
+  const tgtL = sorted(column(tgt, 0))
   const tgtNeutral = estimateNeutral(tgt)
+  const tgtHue = hueStats(chromaAfterCast(tgt, tgtNeutral))
+  const per = refs.map((r) => estimateRef(r, tgtL, tgtHue, opts.keepTone ?? false))
 
-  const refC = chromaAfterCast(ref, refNeutral)
-  const tgtC = chromaAfterCast(tgt, tgtNeutral)
-  const monochrome = quantile(sorted(refC.c), 0.5) < MONO_C
-  let saturation = 1
+  // tone
+  const tones = per.map((p) => p.tone).filter((t): t is ToneParams => t !== null)
+  let tone = identityTone()
+  if (tones.length > 0) {
+    tone = buildTone(tgtL, {
+      logContrast: agree(tones.map((t) => t.logContrast)),
+      exposure: mean(tones.map((t) => t.exposure)) * EXPOSURE_MATCH,
+      black: mean(tones.map((t) => t.black)),
+      white: mean(tones.map((t) => t.white)),
+    })
+  }
 
+  // cast
+  const refNeutral = new Float64Array(TINT_NODES * 2)
+  for (let i = 0; i < refNeutral.length; i++) refNeutral[i] = agree(per.map((p) => p.neutral[i]!))
+
+  // hue & saturation
+  const monochrome = per.filter((p) => p.monochrome).length * 2 > per.length
   const hueShift = new Float64Array(HUE_BINS)
-  const hueSat = new Float64Array(HUE_BINS).fill(1)
+  const hueLogSat = new Float64Array(HUE_BINS)
+  let logSaturation = 0
   if (!monochrome) {
-    const r = hueStats(refC)
-    const t = hueStats(tgtC)
-    // Saturation is compared only between hues both images contain (like with like), so a
-    // vivid forest isn't "desaturated" just because the reference is a pale beach.
     const conf = new Float64Array(HUE_BINS)
-    const ratio = new Float64Array(HUE_BINS).fill(1)
+    const logRatio = new Float64Array(HUE_BINS)
     let sw = 0
     let slog = 0
     for (let k = 0; k < HUE_BINS; k++) {
-      if (r.weight[k]! <= 0 || t.weight[k]! <= 0 || t.meanC[k]! <= 0) continue
-      const support = Math.min(r.share[k]!, t.share[k]!)
-      conf[k] = support / (support + HUE_SUPPORT)
-      ratio[k] = r.meanC[k]! / t.meanC[k]!
-      hueShift[k] = conf[k]! * clamp(wrapAngle(r.hue[k]! - t.hue[k]!), -HUE_SHIFT_MAX, HUE_SHIFT_MAX)
+      const c = per.map((p) => p.conf[k]!)
+      conf[k] = mean(c)
+      if (conf[k]! <= 0) continue
+      hueShift[k] =
+        conf[k]! *
+        agree(
+          per.map((p) => p.shift[k]!),
+          c,
+        )
+      logRatio[k] = agree(
+        per.map((p) => p.logRatio[k]!),
+        c,
+      )
+      const support = mean(per.map((p) => p.support[k]!))
       sw += support
-      slog += support * Math.log(ratio[k]!)
+      slog += support * logRatio[k]!
     }
-    saturation = sw > 0 ? clamp(Math.exp(slog / sw), ...SAT_RANGE) : 1
+    // Saturation is compared only between hues both images contain (like with like), so a
+    // vivid forest isn't "desaturated" just because the reference is a pale beach.
+    logSaturation = sw > 0 ? Math.log(clamp(Math.exp(slog / sw), ...SAT_RANGE)) : 0
     // Shared hues follow their own ratio; hues the reference lacks get only part (in log) of the
     // overall trend — enough to keep the grade coherent, not enough to wash them out.
-    const logSat = new Float64Array(HUE_BINS)
     for (let k = 0; k < HUE_BINS; k++) {
-      const own = Math.log(clamp(ratio[k]!, ...HUE_SAT_RANGE))
-      logSat[k] = conf[k]! * own + (1 - conf[k]!) * UNSEEN_HUE_SAT * Math.log(saturation)
+      const own = clamp(logRatio[k]!, Math.log(HUE_SAT_RANGE[0]), Math.log(HUE_SAT_RANGE[1]))
+      hueLogSat[k] = conf[k]! * own + (1 - conf[k]!) * UNSEEN_HUE_SAT * logSaturation
     }
-    const smoothShift = smoothCircular(hueShift, HUE_SMOOTH)
-    const smoothSat = smoothCircular(logSat, HUE_SMOOTH)
-    for (let k = 0; k < HUE_BINS; k++) {
-      hueShift[k] = smoothShift[k]!
-      hueSat[k] = Math.exp(smoothSat[k]!)
-    }
+    hueShift.set(smoothCircular(hueShift, HUE_SMOOTH))
+    hueLogSat.set(smoothCircular(hueLogSat, HUE_SMOOTH))
   }
 
-  return { tone, tgtNeutral, refNeutral, saturation, hueShift, hueSat, monochrome }
+  return {
+    tone,
+    tgtNeutral,
+    refNeutral,
+    logSaturation,
+    hueShift,
+    hueLogSat,
+    monochrome,
+    strength: clamp(opts.strength ?? 1, ...LOOK_STRENGTH_RANGE),
+  }
+}
+
+function estimateRef(
+  ref: Float32Array,
+  tgtL: Float32Array,
+  tgtHue: HueStats,
+  keepTone: boolean,
+): RefEstimate {
+  const neutral = estimateNeutral(ref)
+  const chroma = chromaAfterCast(ref, neutral)
+  const monochrome = quantile(sorted(chroma.c), 0.5) < MONO_C
+  const conf = new Float64Array(HUE_BINS)
+  const shift = new Float64Array(HUE_BINS)
+  const logRatio = new Float64Array(HUE_BINS)
+  const support = new Float64Array(HUE_BINS)
+  if (!monochrome) {
+    const r = hueStats(chroma)
+    const t = tgtHue
+    for (let k = 0; k < HUE_BINS; k++) {
+      if (r.weight[k]! <= 0 || t.weight[k]! <= 0 || t.meanC[k]! <= 0 || r.meanC[k]! <= 0) continue
+      support[k] = Math.min(r.share[k]!, t.share[k]!)
+      conf[k] = support[k]! / (support[k]! + HUE_SUPPORT)
+      shift[k] = clamp(wrapAngle(r.hue[k]! - t.hue[k]!), -HUE_SHIFT_MAX, HUE_SHIFT_MAX)
+      logRatio[k] = Math.log(r.meanC[k]! / t.meanC[k]!)
+    }
+  }
+  return {
+    tone: keepTone ? null : toneParams(sorted(column(ref, 0)), tgtL),
+    neutral,
+    monochrome,
+    conf,
+    shift,
+    logRatio,
+    support,
+  }
 }
 
 /** Apply the look to one Oklab colour, in place. */
 export function applyLook(m: LookModel, lab: Float64Array | Float32Array, i: number): void {
+  const s = m.strength
   const L = lab[i]!
-  const Lout = table(m.tone, L)
-  let a = lab[i + 1]! - nodeAt(m.tgtNeutral, L, 0)
-  let b = lab[i + 2]! - nodeAt(m.tgtNeutral, L, 1)
+  const Lout = L + s * (table(m.tone, L) - L)
+  let a = lab[i + 1]! - s * nodeAt(m.tgtNeutral, L, 0)
+  let b = lab[i + 2]! - s * nodeAt(m.tgtNeutral, L, 1)
   const C = Math.hypot(a, b)
   if (C > 0) {
     const h = Math.atan2(b, a)
@@ -109,38 +205,84 @@ export function applyLook(m: LookModel, lab: Float64Array | Float32Array, i: num
     const w = smoothstep(0.01, 0.05, C)
     const k = hueIndex(h)
     const C2 = m.monochrome
-      ? 0
-      : C * Math.pow(circularTable(m.hueSat, k), w) * Math.pow(m.saturation, UNSEEN_HUE_SAT * (1 - w))
-    const h2 = h + w * circularTable(m.hueShift, k)
+      ? C * Math.max(0, 1 - s)
+      : C * Math.exp(s * (w * circularTable(m.hueLogSat, k) + (1 - w) * UNSEEN_HUE_SAT * m.logSaturation))
+    const h2 = h + s * w * circularTable(m.hueShift, k)
     a = C2 * Math.cos(h2)
     b = C2 * Math.sin(h2)
   }
   lab[i] = Lout
-  lab[i + 1] = a + nodeAt(m.refNeutral, Lout, 0)
-  lab[i + 2] = b + nodeAt(m.refNeutral, Lout, 1)
+  lab[i + 1] = a + s * nodeAt(m.refNeutral, Lout, 0)
+  lab[i + 2] = b + s * nodeAt(m.refNeutral, Lout, 1)
+}
+
+// --- agreement between references ---------------------------------------------------------
+
+/** Weighted mean, shrunk towards 0 by how much the references disagree (single value: unchanged). */
+function agree(values: readonly number[], weights?: readonly number[]): number {
+  const m = mean(values, weights)
+  if (values.length < 2) return m
+  return m * consistency(values, weights)
+}
+
+/** m² / (m² + variance) ∈ [0,1]: 1 when all values agree, → 0 when they scatter around 0. */
+function consistency(values: readonly number[], weights?: readonly number[]): number {
+  if (values.length < 2) return 1
+  const m = mean(values, weights)
+  let v = 0
+  let ws = 0
+  values.forEach((x, i) => {
+    const w = weights ? weights[i]! : 1
+    v += w * (x - m) ** 2
+    ws += w
+  })
+  v = ws > 0 ? v / ws : 0
+  return m * m + v > 1e-12 ? (m * m) / (m * m + v) : 1
+}
+
+function mean(values: readonly number[], weights?: readonly number[]): number {
+  let s = 0
+  let ws = 0
+  values.forEach((x, i) => {
+    const w = weights ? weights[i]! : 1
+    s += w * x
+    ws += w
+  })
+  return ws > 0 ? s / ws : 0
 }
 
 // --- tone ---------------------------------------------------------------------------------
 
-function estimateTone(refL: Float32Array, tgtL: Float32Array): Float64Array {
-  const r = sorted(refL)
-  const t = sorted(tgtL)
-  const q = (s: Float32Array) => [0.01, 0.25, 0.5, 0.75, 0.99].map((p) => quantile(s, p))
-  const [t01, t25, t50, t75, t99] = q(t) as [number, number, number, number, number]
-  const [r01, r25, r50, r75, r99] = q(r) as [number, number, number, number, number]
-  if (t99 - t01 < 0.05 || r99 - r01 < 0.05 || t75 - t25 < 1e-3) return identityTone()
+const TONE_Q = [0.01, 0.25, 0.5, 0.75, 0.99] as const
+type Quantiles = [number, number, number, number, number]
+const quantiles = (s: Float32Array) => TONE_Q.map((p) => quantile(s, p)) as Quantiles
 
-  const k = clamp((r75 - r25) / (t75 - t25), ...CONTRAST_RANGE)
-  const mid = t50 + EXPOSURE_MATCH * (r50 - t50)
+function toneParams(refL: Float32Array, tgtL: Float32Array): ToneParams | null {
+  const [t01, t25, t50, t75, t99] = quantiles(tgtL)
+  const [r01, r25, r50, r75, r99] = quantiles(refL)
+  if (t99 - t01 < 0.05 || r99 - r01 < 0.05 || t75 - t25 < 1e-3) return null
+  return {
+    logContrast: Math.log(clamp((r75 - r25) / (t75 - t25), ...CONTRAST_RANGE)),
+    exposure: r50 - t50,
+    black: r01,
+    white: r99,
+  }
+}
+
+function buildTone(tgtL: Float32Array, p: ToneParams): Float64Array {
+  const [t01, t25, t50, t75, t99] = quantiles(tgtL)
+  if (t99 - t01 < 0.05 || t75 - t25 < 1e-3) return identityTone()
+  const k = Math.exp(p.logContrast)
+  const mid = t50 + p.exposure
   const y25 = mid - (t50 - t25) * k
   const y75 = mid + (t75 - t50) * k
   // black/white points are the look (fade, highlight roll-off) — but must stay ordered
-  const y01 = Math.min(r01, y25 - 0.01)
-  const y99 = Math.max(r99, y75 + 0.01)
+  const y01 = Math.min(p.black, y25 - 0.01)
+  const y99 = Math.max(p.white, y75 + 0.01)
   const sLo = (y25 - y01) / (t25 - t01)
   const sHi = (y99 - y75) / (t99 - t75)
-  const y0 = clamp(y01 - t01 * sLo, 0, y01)
-  const y1 = clamp(y99 + (1 - t99) * sHi, y99, 1)
+  const y0 = clamp(y01 - t01 * sLo, 0, Math.max(0, y01))
+  const y1 = clamp(y99 + (1 - t99) * sHi, Math.min(1, y99), 1)
 
   const xs = [0, t01, t25, t50, t75, t99, 1]
   const ys = [y0, y01, y25, mid, y75, y99, y1]

@@ -1,4 +1,4 @@
-import { filmLook, mapImage, scene, synthImage } from '../../test/synth'
+import { clamp, filmLook, mapImage, scene, synthImage } from '../../test/synth'
 import { maxSecondDiff, meanError, usedNodes } from '../../test/lutMetrics'
 import { srgbToOklab } from './color'
 import { identityLut, sampleLut } from './lut'
@@ -95,6 +95,44 @@ describe('computeLut', () => {
     const out = new Float32Array(3)
     sampleLut(r.lut, 0.8, 0.3, 0.2, out)
     expect(Math.max(...out) - Math.min(...out)).toBeLessThan(0.06)
+  })
+
+  describe('look strength', () => {
+    it('0 ⇒ identity, 2 ⇒ stronger than 1', () => {
+      const dev = (strength: number) => {
+        const r = computeLut({ reference, target, options: { lookStrength: strength } })
+        return meanError(r.lut, target, target)
+      }
+      expect(dev(0)).toBeLessThan(0.003)
+      expect(dev(2)).toBeGreaterThan(dev(1) * 1.5)
+    })
+
+    it('rejects values outside [0, 2]', () => {
+      expect(() => computeLut({ reference, target, options: { lookStrength: 3 } })).toThrow()
+    })
+  })
+
+  describe('several references', () => {
+    // half grey ramp (neutrals reveal casts), half colourful scene
+    const base = synthImage(128, 128, (x, y) => (x < 0.5 ? [y, y, y] : scene(x, y)))
+    const cast =
+      (dr: number, db: number) =>
+      ([r, g, b]: [number, number, number]): [number, number, number] => [clamp(r + dr), g, clamp(b + db)]
+    const warm = mapImage(base, cast(0.06, -0.06))
+    const cool = mapImage(base, cast(-0.06, 0.06))
+    const greyWarmth = (refs: PixelSource[]) => {
+      const out = new Float32Array(3)
+      sampleLut(computeLut({ reference: refs, target: base }).lut, 0.5, 0.5, 0.5, out)
+      return out[0]! - out[2]!
+    }
+
+    it('keeps a trait every reference shares', () => {
+      expect(greyWarmth([warm, warm])).toBeGreaterThan(0.05)
+    })
+
+    it('suppresses a trait the references disagree on (content, not look)', () => {
+      expect(Math.abs(greyWarmth([warm, cool]))).toBeLessThan(greyWarmth([warm, warm]) * 0.25)
+    })
   })
 
   it('rejects images without enough opaque pixels', () => {
