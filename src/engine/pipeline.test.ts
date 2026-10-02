@@ -1,5 +1,6 @@
 import { filmLook, mapImage, scene, synthImage } from '../../test/synth'
 import { maxSecondDiff, meanError, usedNodes } from '../../test/lutMetrics'
+import { srgbToOklab } from './color'
 import { identityLut, sampleLut } from './lut'
 import { computeLut } from './pipeline'
 import type { PixelSource } from './types'
@@ -24,7 +25,40 @@ describe('computeLut', () => {
     const before = meanError(identityLut(33), target, reference)
     const after = meanError(result.lut, target, reference)
     expect(after).toBeLessThan(0.02)
-    expect(after).toBeLessThan(before * 0.35)
+    expect(after).toBeLessThan(before * 0.65)
+  })
+
+  it('transfer mode fits the same look more tightly (it is free to remap any colour)', () => {
+    const r = computeLut({ reference, target, options: { mode: 'transfer' } })
+    const before = meanError(identityLut(33), target, reference)
+    expect(meanError(r.lut, target, reference)).toBeLessThan(before * 0.35)
+  })
+
+  it('look mode does not recolour content the reference lacks (green stays green)', () => {
+    // reference: warm, sandy/blue beach — no green at all; target: forest + sky
+    const beach = synthImage(128, 128, (x, y) =>
+      y < 0.5 ? [0.55 + 0.2 * y, 0.7 + 0.1 * y, 0.85] : [0.85 - 0.2 * x, 0.75 - 0.2 * x, 0.6 - 0.25 * x],
+    )
+    const forest = synthImage(128, 128, (x, y) =>
+      y < 0.4 ? [0.3, 0.5, 0.9 - 0.2 * y] : [0.15 + 0.2 * x, 0.35 + 0.3 * x, 0.1 + 0.1 * x],
+    )
+    const r = computeLut({ reference: beach, target: forest })
+    const hue = ([cr, cg, cb]: readonly number[] | Float32Array) => {
+      const lab = new Float64Array(3)
+      srgbToOklab(cr!, cg!, cb!, lab, 0)
+      return { h: (Math.atan2(lab[2]!, lab[1]!) * 180) / Math.PI, c: Math.hypot(lab[1]!, lab[2]!) }
+    }
+    for (const green of [
+      [0.2, 0.42, 0.12],
+      [0.3, 0.6, 0.17],
+    ] as const) {
+      const out = new Float32Array(3)
+      sampleLut(r.lut, green[0], green[1], green[2], out)
+      const before = hue(green)
+      const after = hue(out)
+      expect(Math.abs(after.h - before.h)).toBeLessThan(15)
+      expect(after.c).toBeGreaterThan(before.c * 0.7)
+    }
   })
 
   it('is smooth where the image lives and has no discontinuities anywhere', () => {

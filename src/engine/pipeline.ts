@@ -1,11 +1,12 @@
 import { linearToSrgb, oklabToLinear, srgbToOklab } from './color'
 import { fitLut } from './fit'
+import { estimateLook, applyLook } from './look'
 import { lutIndex, lutNodeCount } from './lut'
 import { meanCov } from './linalg'
 import { applyAffine, applyAffineAll, computeDiagonal, computeMkl, type AffineMap } from './mkl'
 import { slicedOt } from './ot'
 import { mulberry32 } from './rng'
-import { extractSamples } from './samples'
+import { extractSamples, type Samples } from './samples'
 import {
   DEFAULT_ENGINE_OPTIONS,
   EngineError,
@@ -53,22 +54,91 @@ export function computeLut(args: ComputeLutArgs): EngineResult {
   if (ref.count < 16 || tgt.count < 16) throw new EngineError('EMPTY_IMAGE', 'Not enough opaque pixels')
   stage('samples')
 
-  // 2. global linear prior
-  progress('mkl', 0)
   const refL = Math.sqrt(meanCov(ref.oklab).cov[0]!)
   const tgtL = Math.sqrt(meanCov(tgt.oklab).cov[0]!)
   const usedFallback = refL < MIN_L_STD
   if (usedFallback) warnings.push({ code: 'LOW_VARIANCE_REFERENCE' })
   if (tgtL < MIN_L_STD) warnings.push({ code: 'LOW_VARIANCE_TARGET' })
-  const prior: AffineMap = usedFallback
-    ? computeDiagonal(tgt.oklab, ref.oklab)
-    : computeMkl(tgt.oklab, ref.oklab)
+
+  const N = o.lutSize
+  const nodes = lutNodeCount(N)
+  const { values, support } =
+    o.mode === 'look'
+      ? lookNodes(ref.oklab, tgt, N, usedFallback, progress, stage)
+      : transferNodes(ref.oklab, tgt, o, usedFallback, progress, stage)
+
+  // 5. clamp, validate
+  progress('finalize', 0)
+  const data = new Float32Array(nodes * 3)
+  let supported = 0
+  let supportedClipped = 0
+  for (let i = 0; i < nodes; i++) {
+    let clipped = false
+    for (let c = 0; c < 3; c++) {
+      const v = values[i * 3 + c]!
+      if (!Number.isFinite(v)) throw new EngineError('NUMERIC_FAILURE', 'Non-finite LUT value')
+      if (v < -0.02 || v > 1.02) clipped = true
+      data[i * 3 + c] = v < 0 ? 0 : v > 1 ? 1 : v
+    }
+    if (support[i]! > SUPPORT_EPS) {
+      supported++
+      if (clipped) supportedClipped++
+    }
+  }
+  if (supported > 0 && supportedClipped / supported > 0.05)
+    warnings.push({
+      code: 'GAMUT_CLIPPED',
+      detail: `${((supportedClipped / supported) * 100).toFixed(1)}% of used nodes`,
+    })
+  if (!greyAxisMonotonic(data, N)) warnings.push({ code: 'TONE_INVERSION' })
+  stage('finalize')
+  progress('finalize', 1)
+
+  return {
+    lut: {
+      size: N,
+      data,
+      meta: {
+        title: args.meta?.title ?? 'Preset AI',
+        sourceRef: args.meta?.sourceRef,
+        createdAt: args.meta?.createdAt ?? new Date().toISOString(),
+      },
+    },
+    warnings,
+    stats: {
+      refSamples: ref.count,
+      targetSamples: tgt.count,
+      timingsMs: timings,
+      usedFallback,
+    },
+  }
+}
+
+type StageFn = (s: EngineStage) => void
+interface NodeValues {
+  /** Unclamped sRGB per node. */
+  values: ArrayLike<number>
+  /** >0 where the target's colours constrain the node. */
+  support: ArrayLike<number>
+}
+
+/** ADR-002/004: distribution transfer (MKL + sliced-OT) fitted onto the grid. */
+function transferNodes(
+  refLab: Float32Array,
+  tgt: Samples,
+  o: EngineOptions,
+  usedFallback: boolean,
+  progress: ProgressFn,
+  stage: StageFn,
+): NodeValues {
+  progress('mkl', 0)
+  const prior: AffineMap = usedFallback ? computeDiagonal(tgt.oklab, refLab) : computeMkl(tgt.oklab, refLab)
   const moved = applyAffineAll(prior, tgt.oklab)
   stage('mkl')
 
   // 3. non-linear residual transport
   if (!usedFallback && o.otIterations > 0) {
-    slicedOt(moved, ref.oklab, {
+    slicedOt(moved, refLab, {
       iterations: o.otIterations,
       relaxation: o.otRelaxation,
       bins: o.otBins,
@@ -103,52 +173,42 @@ export function computeLut(args: ComputeLutArgs): EngineResult {
     passes: o.fitPasses,
   })
   stage('fit')
+  return { values: fit.nodes, support: fit.support }
+}
 
-  // 5. clamp, validate
-  progress('finalize', 0)
-  const data = new Float32Array(nodes * 3)
-  let supported = 0
-  let supportedClipped = 0
-  for (let i = 0; i < nodes; i++) {
-    let clipped = false
-    for (let c = 0; c < 3; c++) {
-      const v = fit.nodes[i * 3 + c]!
-      if (!Number.isFinite(v)) throw new EngineError('NUMERIC_FAILURE', 'Non-finite LUT value')
-      if (v < -0.02 || v > 1.02) clipped = true
-      data[i * 3 + c] = v < 0 ? 0 : v > 1 ? 1 : v
-    }
-    if (fit.support[i]! > SUPPORT_EPS) {
-      supported++
-      if (clipped) supportedClipped++
-    }
+/** ADR-005: content-robust look model evaluated directly at every node (smooth by construction). */
+function lookNodes(
+  refLab: Float32Array,
+  tgt: Samples,
+  N: number,
+  usedFallback: boolean,
+  progress: ProgressFn,
+  stage: StageFn,
+): NodeValues {
+  progress('mkl', 0)
+  const model = estimateLook(refLab, tgt.oklab, { keepTone: usedFallback })
+  stage('mkl')
+  stage('ot')
+  progress('fit', 0)
+  const nodes = lutNodeCount(N)
+  const values = new Float64Array(nodes * 3)
+  const lab = new Float64Array(3)
+  for (let b = 0; b < N; b++)
+    for (let g = 0; g < N; g++)
+      for (let r = 0; r < N; r++) {
+        srgbToOklab(r / (N - 1), g / (N - 1), b / (N - 1), lab, 0)
+        applyLook(model, lab, 0)
+        oklabToSrgbUnclamped(lab, 0, values, lutIndex(N, r, g, b) * 3)
+      }
+  const support = new Float64Array(nodes)
+  const d = N - 1
+  for (let i = 0; i < tgt.srgb.length; i += 3) {
+    const at = (c: number) => Math.round(tgt.srgb[i + c]! * d)
+    const k = lutIndex(N, at(0), at(1), at(2))
+    support[k] = support[k]! + 1
   }
-  if (supported > 0 && supportedClipped / supported > 0.05)
-    warnings.push({
-      code: 'GAMUT_CLIPPED',
-      detail: `${((supportedClipped / supported) * 100).toFixed(1)}% of used nodes`,
-    })
-  if (!greyAxisMonotonic(data, N)) warnings.push({ code: 'TONE_INVERSION' })
-  stage('finalize')
-  progress('finalize', 1)
-
-  return {
-    lut: {
-      size: N,
-      data,
-      meta: {
-        title: args.meta?.title ?? 'Preset AI',
-        sourceRef: args.meta?.sourceRef,
-        createdAt: args.meta?.createdAt ?? new Date().toISOString(),
-      },
-    },
-    warnings,
-    stats: {
-      refSamples: ref.count,
-      targetSamples: tgt.count,
-      timingsMs: timings,
-      usedFallback,
-    },
-  }
+  stage('fit')
+  return { values, support }
 }
 
 const tmpLin = new Float64Array(3)

@@ -23,6 +23,12 @@
 5. Granice modułów przez `no-restricted-imports` zamiast `eslint-plugin-boundaries` (prościej, ten sam efekt).
 6. `EngineOptions`: `smoothness` = σ Gaussa w węzłach, dodane `fitPasses`; usunięte `fitIterations` ze statystyk.
 
+## Zmiana silnika (2026-10-02) → ADR-005
+Prawdziwe pary (skany klisz + zdjęcia z telefonu) ujawniły, że transfer rozkładów przemalowuje treść
+(zieleń → pomarańcz). Nowy domyślny `mode: 'look'` (`src/engine/look.ts`): krzywa tonalna, zafarb
+neutralny per ton, nasycenie/przesunięcia per barwa tylko dla barw wspólnych. ~0,3 s. Stary tryb:
+`mode: 'transfer'`. Harness: `npm run lut -- --options='{"mode":"transfer"}' ...`.
+
 ## Dług techniczny
 - `GAMUT_CLIPPED` może być nadwrażliwy (wystąpił na syntetycznej parze) — skalibrować na zbiorze QA.
 - Załamanie ~0.05 na krawędzi rozkładu kolorów targetu (ADR-004 „Negative”) — obserwować na realnych LUT-ach.

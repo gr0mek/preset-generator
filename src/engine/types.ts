@@ -22,6 +22,11 @@ export interface LutMeta {
 }
 
 export interface EngineOptions {
+  /**
+   * 'look' — estimate a content-robust grade (tone, cast, saturation, per-hue shifts; ADR-005).
+   * 'transfer' — move the target's colour distribution onto the reference's (MKL + sliced-OT; ADR-002).
+   */
+  mode: 'look' | 'transfer'
   /** LUT grid points per axis. */
   lutSize: number
   /** Sliced-OT iterations (random rotations). */
@@ -81,6 +86,7 @@ export class EngineError extends Error {
 }
 
 export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
+  mode: 'look',
   lutSize: 33,
   otIterations: 12,
   otRelaxation: 0.8,
