@@ -4,6 +4,7 @@
  *   npm run lut -- <reference.jpg|png> <target.jpg|png> [out-dir]
  *   npm run lut -- --batch test/fixtures/qa-pairs [out-dir]
  *       batch mode expects <name>_ref.(jpg|png) + <name>_target.(jpg|png) pairs
+ *   --options='{"otIterations":0}'   override EngineOptions (any position; for E4.12 tuning)
  *
  * Writes <name>.cube and <name>_preview.jpg (target | graded target | reference) per pair.
  */
@@ -13,7 +14,7 @@ import jpeg from 'jpeg-js'
 import { PNG } from 'pngjs'
 import { computeLut } from '../src/engine/pipeline'
 import { applyLutToPixels } from '../src/engine/lut'
-import type { PixelSource } from '../src/engine/types'
+import type { EngineOptions, PixelSource } from '../src/engine/types'
 import { cubeText } from '../src/export/cube'
 
 const ANALYSIS_EDGE = 512
@@ -83,6 +84,7 @@ function processPair(name: string, refPath: string, tgtPath: string, outDir: str
   const res = computeLut({
     reference: downscale(ref, ANALYSIS_EDGE),
     target: downscale(tgt, ANALYSIS_EDGE),
+    options,
     meta: { title: `Preset AI — ${name}`, sourceRef: basename(refPath) },
   })
   const ms = Math.round(performance.now() - t0)
@@ -95,7 +97,13 @@ function processPair(name: string, refPath: string, tgtPath: string, outDir: str
   console.log(`${name}: ${ms} ms, warnings: ${res.warnings.map((w) => w.code).join(', ') || 'none'}`)
 }
 
-const args = process.argv.slice(2)
+const OPTIONS_FLAG = '--options='
+const argv = process.argv.slice(2)
+const optionsArg = argv.find((a) => a.startsWith(OPTIONS_FLAG))
+const options = optionsArg
+  ? (JSON.parse(optionsArg.slice(OPTIONS_FLAG.length)) as Partial<EngineOptions>)
+  : undefined
+const args = argv.filter((a) => a !== optionsArg)
 if (args[0] === '--batch') {
   const dir = args[1] ?? 'test/fixtures/qa-pairs'
   const out = args[2] ?? 'out/qa'
